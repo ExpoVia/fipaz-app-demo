@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4fafc;
+  --foreground: #2f2d4c;
+  --expo-blue: #1677b8;
+  --expo-navy: #2f2d4c;
+  --expo-lilac: #b984b6;
+  --expo-pink: #f4a2c0;
+  --expo-yellow: #ffc21a;
+  --expo-green: #62be5a;
+  --expo-mint: #9ed8c9;
+  --expo-sky: #82b5e3;
+  --expo-purple: #8357a5;
+  --expo-coral: #f28a72;
+  --expo-bg: #f4fafc;
+  --expo-card: #ffffff;
+  --expo-line: #d8e5ec;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
