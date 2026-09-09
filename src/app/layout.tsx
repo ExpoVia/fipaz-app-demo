@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -13,9 +13,24 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ExpoVia Demo",
+  title: {
+    default: "ExpoVia Demo",
+    template: "%s · ExpoVia",
+  },
   description:
     "Landing y simulación móvil para validar una nueva experiencia de ferias con mapas, NFC y recompensas.",
+  applicationName: "ExpoVia",
+  icons: {
+    icon: "/assets/brand/expovia-app-icon.svg",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  colorScheme: "light",
+  themeColor: "#1677b8",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

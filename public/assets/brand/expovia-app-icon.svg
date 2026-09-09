@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title description" shape-rendering="crispEdges">
+  <title id="title">Símbolo de ExpoVia</title>
+  <desc id="description">Una ruta pixelada conecta una ubicación con ondas NFC.</desc>
+  <rect width="64" height="64" rx="12" fill="#f4fafc"/>
+  <path d="M8 12h48v40H8z" fill="#82b5e3" stroke="#2f2d4c" stroke-width="4"/>
+  <path d="M14 18h36v28H14z" fill="#f4fafc"/>
+  <path d="M19 39h9v-7h9v-8h9" fill="none" stroke="#8357a5" stroke-width="5" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M20 29c-5 0-8-3-8-8s3-8 8-8 8 3 8 8c0 6-8 13-8 13s-8-7-8-13" fill="#ffc21a" stroke="#2f2d4c" stroke-width="3"/>
+  <rect x="18" y="19" width="4" height="4" fill="#2f2d4c"/>
+  <path d="M41 24c4 1 7 4 8 8M42 17c7 2 12 7 14 14" fill="none" stroke="#f28a72" stroke-width="4" stroke-linecap="square"/>
+  <rect x="43" y="34" width="7" height="7" fill="#62be5a" stroke="#2f2d4c" stroke-width="3"/>
+</svg>
