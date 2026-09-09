@@ -285,7 +285,7 @@ export function ExpoMapDemoScreen() {
       onSelectStand={setSelectedStandId}
       selectedStandId={selectedStandId}
       stands={expoStands}
-      visitedStandIds={["tec-02", "gas-02", "fin-01"]}
+      visitedStandIds={["red-02", "yellow-04", "green-01"]}
     />
   );
 }

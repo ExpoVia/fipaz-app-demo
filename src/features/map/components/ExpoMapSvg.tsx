@@ -27,6 +27,18 @@ const poiIcons = {
   health: Cross,
 } satisfies Record<PoiType, typeof DoorOpen>;
 
+const venueLabels = [
+  { label: "Salon Chuquisaca", x: 142, y: 138 },
+  { label: "Salon Potosi", x: 270, y: 138 },
+  { label: "Plaza Interaccion", x: 354, y: 334 },
+  { label: "Salon Arena La Paz", x: 470, y: 124 },
+  { label: "Salon Cochabamba", x: 604, y: 124 },
+  { label: "Plaza Encuentro", x: 710, y: 334 },
+  { label: "Salon Murillo", x: 770, y: 138 },
+  { label: "Salon Santa Cruz", x: 872, y: 138 },
+  { label: "Teatro Illimani", x: 884, y: 480 },
+];
+
 function handleKeyPress(event: KeyboardEvent<SVGGElement>, action: () => void) {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
@@ -53,24 +65,30 @@ export function ExpoMapSvg({
 
   return (
     <svg
-      aria-label="Mapa demostrativo interactivo de ExpoVia"
+      aria-label="Mapa demostrativo interactivo inspirado en Campo Ferial Chuquiago Marka"
       className="h-full w-full select-none"
       role="img"
-      viewBox="0 0 900 680"
+      viewBox="0 0 1020 680"
     >
       <defs>
         <pattern id="expo-map-grid" width="36" height="36" patternUnits="userSpaceOnUse">
           <path d="M36 0H0V36" fill="none" stroke="#0f172a" strokeOpacity="0.05" strokeWidth="3" />
         </pattern>
+        <pattern id="glass-grid" width="12" height="12" patternUnits="userSpaceOnUse">
+          <path d="M0 0H12V12H0Z" fill="none" stroke="#172554" strokeOpacity="0.26" strokeWidth="1.5" />
+        </pattern>
         <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
           <feDropShadow dx="0" dy="8" floodColor="#172554" floodOpacity="0.16" stdDeviation="8" />
         </filter>
+        <marker id="arrow" markerHeight="8" markerWidth="10" orient="auto" refX="8" refY="4">
+          <path d="M0 0L8 4L0 8Z" fill="#0f172a" />
+        </marker>
       </defs>
 
-      <rect fill="#f8fbff" height="680" width="900" />
-      <rect fill="url(#expo-map-grid)" height="680" opacity="0.7" width="900" />
+      <rect fill="#f8fbff" height="680" width="1020" />
+      <rect fill="url(#expo-map-grid)" height="680" opacity="0.65" width="1020" />
       <path
-        d="M48 42H850C871 42 884 58 879 79L838 626C835 645 820 658 801 658H76C55 658 42 642 45 621L22 382C20 365 31 352 48 350V42Z"
+        d="M42 76H966C986 76 998 90 994 110L968 602C966 622 952 636 932 636H78C58 636 44 622 42 602L22 110C20 90 32 76 42 76Z"
         fill="#ffffff"
         filter="url(#soft-shadow)"
         stroke="#172554"
@@ -78,12 +96,13 @@ export function ExpoMapSvg({
         strokeWidth="8"
       />
 
-      <path d="M421 76H483V620H421Z" fill="#eef2f7" stroke="#cbd5e1" strokeDasharray="12 12" strokeWidth="3" />
-      <path d="M64 358H840" fill="none" stroke="#eef2f7" strokeLinecap="round" strokeWidth="60" />
-      <path d="M64 358H840" fill="none" stroke="#cbd5e1" strokeDasharray="14 16" strokeLinecap="round" strokeWidth="3" />
+      <path d="M350 296H360V376H350Z" fill="#dbe7ef" />
+      <path d="M708 296H718V376H708Z" fill="#dbe7ef" />
+      <path d="M356 326H362L394 326" fill="none" stroke="#cbd5e1" strokeDasharray="10 8" strokeWidth="8" />
+      <path d="M708 326H714L742 326" fill="none" stroke="#cbd5e1" strokeDasharray="10 8" strokeWidth="8" />
 
       {zones.map((zone) => {
-        const isFiltered = !activeCategories.includes(zone.category);
+        const isFiltered = !visibleStands.some((stand) => stand.zoneId === zone.id);
 
         return (
           <g
@@ -93,16 +112,17 @@ export function ExpoMapSvg({
             key={zone.id}
             onClick={() => onZonePress(zone.id)}
             onKeyDown={(event) => handleKeyPress(event, () => onZonePress(zone.id))}
-            opacity={isFiltered ? 0.22 : 1}
+            opacity={isFiltered ? 0.24 : 1}
             role="button"
             tabIndex={0}
           >
-            <path d={zone.path} fill={zone.color} stroke={zone.borderColor} strokeWidth="8" />
-            <path d={zone.path} fill="none" opacity="0.45" stroke="#ffffff" strokeWidth="16" />
+            <path d={zone.path} fill={zone.color} stroke={zone.borderColor} strokeWidth="7" />
+            <path d={zone.path} fill="url(#glass-grid)" opacity="0.42" />
+            <path d={zone.path} fill="none" opacity="0.42" stroke="#ffffff" strokeWidth="14" />
             <text
               fill="#10233f"
               fontFamily="monospace"
-              fontSize="24"
+              fontSize="23"
               fontWeight="900"
               textAnchor="middle"
               x={zone.labelX}
@@ -113,11 +133,11 @@ export function ExpoMapSvg({
             <text
               fill="#10233f"
               fontFamily="monospace"
-              fontSize="16"
+              fontSize="13"
               fontWeight="800"
               textAnchor="middle"
               x={zone.labelX}
-              y={zone.labelY + 28}
+              y={zone.labelY + 26}
             >
               {zone.shortName}
             </text>
@@ -125,16 +145,54 @@ export function ExpoMapSvg({
         );
       })}
 
+      <g aria-label="Torres y pasarelas">
+        <rect fill="#f8fafc" height="390" rx="8" stroke="#cbd5e1" strokeWidth="4" width="36" x="336" y="124" />
+        <rect fill="#f8fafc" height="390" rx="8" stroke="#cbd5e1" strokeWidth="4" width="36" x="684" y="124" />
+        <path d="M350 118H720" fill="none" stroke="#f8fafc" strokeLinecap="round" strokeWidth="24" />
+        <path d="M350 118H720" fill="none" stroke="#cbd5e1" strokeDasharray="16 12" strokeLinecap="round" strokeWidth="4" />
+        {showZoneDetails ? (
+          <>
+            <text fill="#334155" fontFamily="sans-serif" fontSize="13" fontWeight="900" textAnchor="middle" x="356" y="292">
+              Pasarela Rojo-Amarillo
+            </text>
+            <text fill="#334155" fontFamily="sans-serif" fontSize="13" fontWeight="900" textAnchor="middle" x="714" y="292">
+              Pasarela Amarillo-Verde
+            </text>
+          </>
+        ) : null}
+      </g>
+
       {showZoneDetails ? (
-        <g aria-label="Pasillos y filas">
-          {["A", "B", "C", "D"].map((row, index) => (
-            <g key={row}>
-              <rect fill="#ffffff" height="24" opacity="0.76" rx="4" width="44" x={102 + index * 206} y="360" />
-              <text fill="#334155" fontFamily="monospace" fontSize="14" fontWeight="900" textAnchor="middle" x={124 + index * 206} y="377">
-                Fila {row}
-              </text>
-            </g>
+        <g aria-label="Calles internas y salones">
+          {venueLabels.map((item) => (
+            <text fill="#24324c" fontFamily="sans-serif" fontSize="13" fontWeight="900" key={item.label} textAnchor="middle" x={item.x} y={item.y}>
+              {item.label}
+            </text>
           ))}
+          <text fill="#475569" fontFamily="monospace" fontSize="20" letterSpacing="6" textAnchor="middle" x="212" y="332">
+            CALLE 2
+          </text>
+          <text fill="#475569" fontFamily="monospace" fontSize="20" letterSpacing="6" textAnchor="middle" x="212" y="432">
+            CALLE 1
+          </text>
+          <text fill="#475569" fontFamily="monospace" fontSize="20" letterSpacing="6" textAnchor="middle" x="534" y="326">
+            CALLE 3
+          </text>
+          <text fill="#475569" fontFamily="monospace" fontSize="20" letterSpacing="6" textAnchor="middle" x="534" y="430">
+            CALLE 2
+          </text>
+          <text fill="#475569" fontFamily="monospace" fontSize="16" letterSpacing="3" textAnchor="middle" x="828" y="342">
+            BOULEVARD ENCANTADO
+          </text>
+          <path d="M112 560H912" fill="none" stroke="#0f172a" strokeOpacity="0.7" strokeWidth="4" />
+          <path d="M430 584H594" fill="none" markerEnd="url(#arrow)" stroke="#0f172a" strokeWidth="8" />
+          <text fill="#1f2937" fontFamily="sans-serif" fontSize="20" fontWeight="900" textAnchor="middle" x="504" y="592">
+            RAMPAS DE SUBIDA Y BAJADA
+          </text>
+          <rect fill="#eef2f7" height="52" rx="8" stroke="#94a3b8" strokeWidth="3" width="170" x="540" y="506" />
+          <text fill="#334155" fontFamily="sans-serif" fontSize="17" fontWeight="900" textAnchor="middle" x="625" y="538">
+            Plaza de comida
+          </text>
         </g>
       ) : null}
 
@@ -173,17 +231,17 @@ export function ExpoMapSvg({
                 tabIndex={0}
               >
                 <rect
-                  fill={isSelected ? "#fff7ed" : "#ffffff"}
+                  fill={isSelected ? "#fff7ed" : "#fffdf4"}
                   height={stand.height}
-                  rx="8"
-                  stroke={isSelected ? "#f97316" : isVisited ? "#0f9f6e" : "#475569"}
+                  rx="5"
+                  stroke={isSelected ? "#f97316" : isVisited ? "#0f9f6e" : "#1f2937"}
                   strokeDasharray={isVisited && !isSelected ? "8 5" : undefined}
                   strokeWidth={isSelected ? 6 : 3}
                   width={stand.width}
                   x={stand.x}
                   y={stand.y}
                 />
-                <rect fill="#0f172a" height="24" rx="5" width="32" x={stand.x + 8} y={stand.y + 8} />
+                <rect fill="#0f172a" height="24" rx="3" width="32" x={stand.x + 8} y={stand.y + 8} />
                 <text fill="#ffffff" fontFamily="monospace" fontSize="12" fontWeight="900" textAnchor="middle" x={stand.x + 24} y={stand.y + 24}>
                   {stand.logoText}
                 </text>
@@ -232,7 +290,7 @@ export function ExpoMapSvg({
           >
             <animate attributeName="stroke-dashoffset" dur="1.1s" fill="freeze" from="96" to="0" />
           </polyline>
-          <text fill="#991b1b" fontFamily="sans-serif" fontSize="15" fontWeight="900" x="482" y="334">
+          <text fill="#991b1b" fontFamily="sans-serif" fontSize="15" fontWeight="900" x="536" y="520">
             Ruta aproximada de demostracion
           </text>
         </g>
@@ -250,13 +308,13 @@ export function ExpoMapSvg({
       ) : null}
 
       {zoomLevel === "general" ? (
-        <text fill="#475569" fontFamily="sans-serif" fontSize="18" fontWeight="900" textAnchor="middle" x="450" y="650">
-          Acerca para ver los stands
+        <text fill="#475569" fontFamily="sans-serif" fontSize="18" fontWeight="900" textAnchor="middle" x="510" y="650">
+          Acerca para ver stands, calles y servicios
         </text>
       ) : null}
 
-      <text fill="#64748b" fontFamily="monospace" fontSize="14" fontWeight="900" x="64" y="70">
-        Mapa demostrativo
+      <text fill="#64748b" fontFamily="monospace" fontSize="14" fontWeight="900" x="64" y="108">
+        Mapa demostrativo inspirado en Chuquiago Marka
       </text>
     </svg>
   );
