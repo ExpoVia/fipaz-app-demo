@@ -1,0 +1,23 @@
+<!-- Etiqueta NFC ficticia de ExpoVia. Sin texto, QR ni marcas existentes. -->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 160 112"
+  width="160"
+  height="112"
+  fill="none"
+  aria-hidden="true"
+>
+  <defs>
+    <linearGradient id="tag-background" x1="16" y1="12" x2="144" y2="100" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1677B8"/>
+      <stop offset="1" stop-color="#8357A5"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="152" height="104" rx="24" fill="white" stroke="#2F2D4C" stroke-width="8"/>
+  <rect x="14" y="14" width="132" height="84" rx="16" fill="url(#tag-background)"/>
+  <circle cx="80" cy="56" r="25" fill="#FFC21A"/>
+  <circle cx="80" cy="56" r="8" fill="#2F2D4C"/>
+  <path d="M65 42C73 34 87 34 95 42" stroke="#2F2D4C" stroke-width="6" stroke-linecap="round"/>
+  <path d="M60 34C71 22 89 22 100 34" stroke="white" stroke-width="5" stroke-linecap="round" opacity=".9"/>
+  <path d="M100 78L105 86L114 88L106 94L107 103L100 98L92 103L94 94L87 88L96 86L100 78Z" fill="#F4A2C0" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+</svg>

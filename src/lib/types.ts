@@ -47,29 +47,3 @@ export interface Reward {
   stockLabel?: string;
   emoji: string;
 }
-
-// ─── Demo visits ───────────────────────────────────────────────────────────
-
-export interface DemoVisit {
-  standId: string;
-  standName: string;
-  timestamp: number;
-}
-
-// ─── Demo state ────────────────────────────────────────────────────────────
-
-export interface DemoState {
-  points: number;
-  level: number;
-  visitedStandIds: string[];
-  favoriteStandIds: string[];
-  missionProgress: Record<string, number>;
-  /** Ids of missions where special action has been completed */
-  specialActionsDone: string[];
-  /** Ids of unlocked missions (initially empty; unlocked as base missions complete) */
-  unlockedMissionIds: string[];
-  recentVisits: DemoVisit[];
-  redeemedRewardIds: string[];
-  nfcStage: "idle" | "scanning" | "detected" | "success" | "duplicate";
-  selectedStandId: string | null;
-}
