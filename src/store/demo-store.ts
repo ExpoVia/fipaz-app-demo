@@ -1,208 +1,230 @@
-
-
 "use client";
 
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
-import { standsById } from "@/data/demo-data";
-import {
-  getLevelForPoints,
-  resolveTargetStand,
-} from "@/lib/demo-domain";
-import {
-  clearPersistedState,
-  cloneInitialPersistedState,
-  parsePersistedState,
-  safeDemoStorage,
-  STORAGE_KEY,
-  VISIT_POINTS,
-} from "@/lib/demo-storage";
-import type { DemoTab } from "@/config/navigation";
-import type { DemoState, DemoStore, NfcStage, PersistedDemoStateV1, Visit } from "@/types/demo";
+import { persist } from "zustand/middleware";
 
-// ─── Estado inicial efímero ───────────────────────────────────────────────────
+import { MISSIONS, INITIAL_VISIBLE_MISSION_IDS } from "@/data/missions";
+import type { DemoState, DemoVisit } from "@/lib/types";
 
-const INITIAL_EPHEMERAL = {
-  activeTab: "home" as DemoTab,
-  nfcStage: "idle" as NfcStage,
-  hasHydrated: false,
-} satisfies Pick<DemoState, "activeTab" | "nfcStage" | "hasHydrated">;
+// ─── State version — bump if shape changes to avoid hydration errors ────────
+const STATE_VERSION = 1;
 
-// ─── Estado inicial completo ──────────────────────────────────────────────────
+// ─── Initial state ──────────────────────────────────────────────────────────
 
-const INITIAL_STATE: DemoState = {
-  ...cloneInitialPersistedState(),
-  ...INITIAL_EPHEMERAL,
-};
+function buildInitialState(): DemoState {
+  return {
+    points: 150,
+    level: 2,
+    visitedStandIds: [],
+    favoriteStandIds: [],
+    /**
+     * Seed: "Ruta tecnológica" starts at 2/5 so the NFC scan demo shows
+     * progress going 2→3.
+     */
+    // Seed ruta-tecnologica at 2/3 — one more simulated visit completes it in the demo
+    missionProgress: { "ruta-tecnologica": 2 },
+    specialActionsDone: [],
+    unlockedMissionIds: [],
+    recentVisits: [],
+    redeemedRewardIds: [],
+    nfcStage: "idle",
+    selectedStandId: null,
+  };
+}
 
-// ─── Store ────────────────────────────────────────────────────────────────────
+// ─── Store shape ────────────────────────────────────────────────────────────
+
+interface DemoStore extends DemoState {
+  // ── Stand visits ──────────────────────────────────────────────────────────
+  visitStand: (standId: string, standName: string) => void;
+  toggleFavorite: (standId: string) => void;
+
+  // ── Missions ──────────────────────────────────────────────────────────────
+  completeMissionSpecialAction: (missionId: string) => void;
+  /** Returns current progress count for a mission */
+  getMissionProgress: (missionId: string) => number;
+  /** Returns list of visible mission ids (8 initial + any unlocked) */
+  getVisibleMissionIds: () => string[];
+
+  // ── Rewards ───────────────────────────────────────────────────────────────
+  redeemReward: (rewardId: string, cost: number) => string | null;
+
+  // ── NFC simulation ────────────────────────────────────────────────────────
+  setNfcStage: (stage: DemoState["nfcStage"]) => void;
+
+  // ── Reset ─────────────────────────────────────────────────────────────────
+  resetDemo: () => void;
+}
+
+// ─── Helper: compute points for visiting a stand ────────────────────────────
+
+const NFC_VISIT_POINTS = 50;
+
+// ─── Helper: check if a mission just completed and unlock dependents ─────────
+
+function checkAndUnlock(
+  missionId: string,
+  progress: number,
+  state: DemoState,
+): string[] {
+  const mission = MISSIONS.find((m) => m.id === missionId);
+  if (!mission) return state.unlockedMissionIds;
+
+  const isComplete =
+    progress >= mission.target ||
+    (mission.specialAction && state.specialActionsDone.includes(missionId));
+
+  if (!isComplete) return state.unlockedMissionIds;
+
+  const toUnlock = MISSIONS.filter(
+    (m) =>
+      m.unlockedBy === missionId &&
+      !state.unlockedMissionIds.includes(m.id),
+  ).map((m) => m.id);
+
+  return [...state.unlockedMissionIds, ...toUnlock];
+}
+
+// ─── Store ───────────────────────────────────────────────────────────────────
 
 export const useDemoStore = create<DemoStore>()(
   persist(
     (set, get) => ({
-      // ── Estado inicial ───────────────────────────────────────────────────────
-      ...INITIAL_STATE,
+      ...buildInitialState(),
 
-      setHasHydrated: () => set({ hasHydrated: true }),
+      // ── Stand visits ────────────────────────────────────────────────────
 
-      // ── Navegación ───────────────────────────────────────────────────────────
-      setActiveTab: (tab) => set({ activeTab: tab }),
-
-      // ── Selección ────────────────────────────────────────────────────────────
-      selectStand: (standId) => set({ selectedStandId: standId }),
-      selectZone: (zoneId) => set({ selectedZoneId: zoneId }),
-
-      toggleFavorite: (standId) =>
-        set((state) => {
-          if (!standsById.has(standId)) return {};
-
-          const isFav = state.favoriteStandIds.includes(standId);
-          return {
-            favoriteStandIds: isFav
-              ? state.favoriteStandIds.filter((id) => id !== standId)
-              : [...state.favoriteStandIds, standId],
-          };
-        }),
-
-      // ── Flujo NFC ─────────────────────────────────────────────────────────────
-
-      startNfcScan: (standId) => {
+      visitStand(standId, standName) {
         const state = get();
 
-        if (standId && !standsById.has(standId)) {
-          set({ nfcStage: "error", selectedStandId: null });
-          return;
-        }
+        if (state.visitedStandIds.includes(standId)) return;
 
-        // Un escaneo genérico no debe quedar atrapado en el último stand ya
-        // visitado. Los duplicados siguen siendo demostrables pasando su ID
-        // explícitamente desde la ficha del stand.
-        const reusableSelectedStandId =
-          state.selectedStandId &&
-          !state.visitedStandIds.includes(state.selectedStandId)
-            ? state.selectedStandId
-            : null;
-
-        const target = resolveTargetStand(
+        const newVisit: DemoVisit = {
           standId,
-          reusableSelectedStandId,
-          state.visitedStandIds
-        );
+          standName,
+          timestamp: Date.now(),
+        };
 
-        if (!target) {
-          set({ nfcStage: "error", selectedStandId: null });
-          return;
+        // Update mission progress: any mission whose standIds include this stand
+        const newProgress = { ...state.missionProgress };
+        let newUnlocked = [...state.unlockedMissionIds];
+
+        MISSIONS.forEach((mission) => {
+          if (!mission.standIds?.includes(standId)) return;
+          const prev = newProgress[mission.id] ?? 0;
+          const next = Math.min(prev + 1, mission.target);
+          newProgress[mission.id] = next;
+          newUnlocked = checkAndUnlock(mission.id, next, {
+            ...state,
+            unlockedMissionIds: newUnlocked,
+          });
+        });
+
+        // Also update "explorador-expovia" (any stand)
+        const explorerPrev = newProgress["explorador-expovia"] ?? 0;
+        const explorerNext = Math.min(
+          explorerPrev + 1,
+          MISSIONS.find((m) => m.id === "explorador-expovia")?.target ?? 5,
+        );
+        newProgress["explorador-expovia"] = explorerNext;
+        newUnlocked = checkAndUnlock("explorador-expovia", explorerNext, {
+          ...state,
+          unlockedMissionIds: newUnlocked,
+        });
+
+        // "primer-contacto" — first NFC visit
+        if (state.visitedStandIds.length === 0) {
+          newProgress["primer-contacto"] = 1;
+          newUnlocked = checkAndUnlock("primer-contacto", 1, {
+            ...state,
+            unlockedMissionIds: newUnlocked,
+          });
         }
 
         set({
-          nfcStage: "searching",
-          selectedStandId: target.id,
+          visitedStandIds: [...state.visitedStandIds, standId],
+          points: state.points + NFC_VISIT_POINTS,
+          missionProgress: newProgress,
+          unlockedMissionIds: newUnlocked,
+          recentVisits: [newVisit, ...state.recentVisits].slice(0, 20),
         });
       },
 
-      markNfcDetected: () =>
-        set((state) => {
-          if (state.nfcStage !== "searching") return {};
-          return { nfcStage: "detected" };
-        }),
-
-      beginNfcConfirmation: () =>
-        set((state) => {
-          if (state.nfcStage !== "detected") return {};
-          return { nfcStage: "confirming" };
-        }),
-
-      /**
-       * Transición atómica de confirmación de visita.
-       * Toda la lógica ocurre dentro de un único set() para garantizar
-       * consistencia aunque se llame dos veces seguidas (doble toque).
-       */
-      confirmVisit: (standId) =>
-        set((state) => {
-          const stand = standsById.get(standId);
-
-          // Stand inválido → error sin mutación durable
-          if (!stand) {
-            return { nfcStage: "error" };
-          }
-
-          // Visita duplicada → sin puntos
-          if (state.visitedStandIds.includes(standId)) {
-            return { nfcStage: "duplicate" };
-          }
-
-          const pointsAwarded: typeof VISIT_POINTS = stand.points;
-          const nextPoints = state.points + pointsAwarded;
-
-          const visit: Visit = {
-            id: `visit-${standId}-${Date.now()}`,
-            standId,
-            visitedAt: new Date().toISOString(),
-            pointsAwarded,
-          };
-
-          return {
-            visitedStandIds: [...state.visitedStandIds, standId],
-            recentVisits: [visit, ...state.recentVisits].slice(0, 10),
-            points: nextPoints,
-            level: getLevelForPoints(nextPoints),
-            selectedStandId: standId,
-            nfcStage: "success",
-          };
-        }),
-
-      failNfcScan: () => set({ nfcStage: "error" }),
-
-      resetNfcFlow: () => set({ nfcStage: "idle" }),
-
-      // ── Reinicio de demo ──────────────────────────────────────────────────────
-
-      resetDemo: () => {
+      toggleFavorite(standId) {
+        const { favoriteStandIds } = get();
         set({
-          ...cloneInitialPersistedState(),
-          ...INITIAL_EPHEMERAL,
-          // Forzar hidratación completada para evitar parpadeo post-reset
-          hasHydrated: true,
+          favoriteStandIds: favoriteStandIds.includes(standId)
+            ? favoriteStandIds.filter((id) => id !== standId)
+            : [...favoriteStandIds, standId],
         });
-        // `set` activa el middleware persist; limpiar después garantiza que la
-        // clave quede eliminada al finalizar el reinicio.
-        clearPersistedState();
+      },
+
+      // ── Missions ─────────────────────────────────────────────────────────
+
+      completeMissionSpecialAction(missionId) {
+        const state = get();
+        if (state.specialActionsDone.includes(missionId)) return;
+
+        const mission = MISSIONS.find((m) => m.id === missionId);
+        if (!mission) return;
+
+        const newSpecialDone = [...state.specialActionsDone, missionId];
+        const newProgress = { ...state.missionProgress, [missionId]: mission.target };
+        const newUnlocked = checkAndUnlock(missionId, mission.target, {
+          ...state,
+          specialActionsDone: newSpecialDone,
+        });
+
+        set({
+          specialActionsDone: newSpecialDone,
+          missionProgress: newProgress,
+          unlockedMissionIds: newUnlocked,
+          points: state.points + mission.rewardPoints,
+        });
+      },
+
+      getMissionProgress(missionId) {
+        return get().missionProgress[missionId] ?? 0;
+      },
+
+      getVisibleMissionIds() {
+        const { unlockedMissionIds } = get();
+        return [...INITIAL_VISIBLE_MISSION_IDS, ...unlockedMissionIds];
+      },
+
+      // ── Rewards ───────────────────────────────────────────────────────────
+
+      redeemReward(rewardId, cost) {
+        const state = get();
+        if (state.points < cost) return null;
+        if (state.redeemedRewardIds.includes(rewardId)) return null;
+
+        // Generate a short demo code
+        const code = `DEMO-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+        set({
+          points: state.points - cost,
+          redeemedRewardIds: [...state.redeemedRewardIds, rewardId],
+        });
+
+        return code;
+      },
+
+      // ── NFC ──────────────────────────────────────────────────────────────
+
+      setNfcStage(stage) {
+        set({ nfcStage: stage });
+      },
+
+      // ── Reset ─────────────────────────────────────────────────────────────
+
+      resetDemo() {
+        set(buildInitialState());
       },
     }),
     {
-      name: STORAGE_KEY,
-      version: 1,
-      // Next.js prerenderiza Client Components en el servidor. La hidratación
-      // se inicia desde las pantallas cliente para evitar HTML divergente.
-      skipHydration: true,
-      storage: createJSONStorage(() => safeDemoStorage),
-
-      /**
-       * Solo persiste estado durable.
-       * Excluidos: activeTab, nfcStage, hasHydrated, todas las acciones.
-       */
-      partialize: (state): PersistedDemoStateV1 => ({
-        points: state.points,
-        level: state.level,
-        selectedStandId: state.selectedStandId,
-        selectedZoneId: state.selectedZoneId,
-        visitedStandIds: state.visitedStandIds,
-        favoriteStandIds: state.favoriteStandIds,
-        recentVisits: state.recentVisits,
-        lastKnownLocation: state.lastKnownLocation,
-      }),
-
-      /** Valida y normaliza el estado antes de incorporarlo al store. */
-      merge: (persistedState, currentState) => ({
-        ...currentState,
-        ...parsePersistedState(persistedState),
-      }),
-
-      onRehydrateStorage: () => (state) => {
-        if (state) {
-          state.setHasHydrated();
-        }
-      },
-    }
-  )
+      name: "expovia-demo-v" + STATE_VERSION,
+      version: STATE_VERSION,
+    },
+  ),
 );
