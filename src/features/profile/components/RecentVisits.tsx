@@ -50,7 +50,7 @@ export function RecentVisits({ visits }: RecentVisitsProps) {
             {/* Info de stand */}
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-[var(--expo-navy)] text-sm truncate">
-                {stand?.name ?? visit.standId}
+                {stand?.name ?? visit.standName ?? visit.standId}
               </p>
               <p className="text-xs text-slate-400 font-mono">
                 {stand?.boothCode}

@@ -1,230 +1,325 @@
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 
-import { MISSIONS, INITIAL_VISIBLE_MISSION_IDS } from "@/data/missions";
-import type { DemoState, DemoVisit } from "@/lib/types";
+import type { DemoTab } from "@/config/navigation";
+import { standsById } from "@/data/demo-data";
+import { INITIAL_VISIBLE_MISSION_IDS, MISSIONS } from "@/data/missions";
+import { getLevelForPoints, resolveTargetStand } from "@/lib/demo-domain";
+import {
+  clearPersistedState,
+  cloneInitialPersistedState,
+  parsePersistedState,
+  safeDemoStorage,
+  STORAGE_KEY,
+  VISIT_POINTS,
+} from "@/lib/demo-storage";
+import type {
+  DemoState,
+  DemoStore,
+  NfcStage,
+  PersistedDemoStateV1,
+  StandCategory,
+  Visit,
+} from "@/types/demo";
 
-// ─── State version — bump if shape changes to avoid hydration errors ────────
-const STATE_VERSION = 1;
+const INITIAL_EPHEMERAL = {
+  activeTab: "home" as DemoTab,
+  nfcStage: "idle" as NfcStage,
+  hasHydrated: false,
+} satisfies Pick<DemoState, "activeTab" | "nfcStage" | "hasHydrated">;
 
-// ─── Initial state ──────────────────────────────────────────────────────────
-
-function buildInitialState(): DemoState {
+function buildInitialState(hasHydrated = false): DemoState {
   return {
-    points: 150,
-    level: 2,
-    visitedStandIds: [],
-    favoriteStandIds: [],
-    /**
-     * Seed: "Ruta tecnológica" starts at 2/5 so the NFC scan demo shows
-     * progress going 2→3.
-     */
-    // Seed ruta-tecnologica at 2/3 — one more simulated visit completes it in the demo
-    missionProgress: { "ruta-tecnologica": 2 },
-    specialActionsDone: [],
-    unlockedMissionIds: [],
-    recentVisits: [],
-    redeemedRewardIds: [],
-    nfcStage: "idle",
-    selectedStandId: null,
+    ...cloneInitialPersistedState(),
+    ...INITIAL_EPHEMERAL,
+    hasHydrated,
   };
 }
 
-// ─── Store shape ────────────────────────────────────────────────────────────
+const missionCategoryByStandCategory: Partial<Record<StandCategory, string>> = {
+  technology: "tecnologia",
+  finance: "finanzas",
+  gastronomy: "gastronomia",
+  startups: "startups",
+};
 
-interface DemoStore extends DemoState {
-  // ── Stand visits ──────────────────────────────────────────────────────────
-  visitStand: (standId: string, standName: string) => void;
-  toggleFavorite: (standId: string) => void;
-
-  // ── Missions ──────────────────────────────────────────────────────────────
-  completeMissionSpecialAction: (missionId: string) => void;
-  /** Returns current progress count for a mission */
-  getMissionProgress: (missionId: string) => number;
-  /** Returns list of visible mission ids (8 initial + any unlocked) */
-  getVisibleMissionIds: () => string[];
-
-  // ── Rewards ───────────────────────────────────────────────────────────────
-  redeemReward: (rewardId: string, cost: number) => string | null;
-
-  // ── NFC simulation ────────────────────────────────────────────────────────
-  setNfcStage: (stage: DemoState["nfcStage"]) => void;
-
-  // ── Reset ─────────────────────────────────────────────────────────────────
-  resetDemo: () => void;
-}
-
-// ─── Helper: compute points for visiting a stand ────────────────────────────
-
-const NFC_VISIT_POINTS = 50;
-
-// ─── Helper: check if a mission just completed and unlock dependents ─────────
-
-function checkAndUnlock(
+function unlockDependents(
   missionId: string,
   progress: number,
-  state: DemoState,
+  state: Pick<DemoState, "specialActionsDone" | "unlockedMissionIds">,
 ): string[] {
-  const mission = MISSIONS.find((m) => m.id === missionId);
+  const mission = MISSIONS.find((candidate) => candidate.id === missionId);
   if (!mission) return state.unlockedMissionIds;
 
   const isComplete =
     progress >= mission.target ||
-    (mission.specialAction && state.specialActionsDone.includes(missionId));
+    (Boolean(mission.specialAction) &&
+      state.specialActionsDone.includes(missionId));
 
   if (!isComplete) return state.unlockedMissionIds;
 
-  const toUnlock = MISSIONS.filter(
-    (m) =>
-      m.unlockedBy === missionId &&
-      !state.unlockedMissionIds.includes(m.id),
-  ).map((m) => m.id);
+  const dependents = MISSIONS.filter(
+    (candidate) =>
+      candidate.unlockedBy === missionId &&
+      !state.unlockedMissionIds.includes(candidate.id),
+  ).map((candidate) => candidate.id);
 
-  return [...state.unlockedMissionIds, ...toUnlock];
+  return [...new Set([...state.unlockedMissionIds, ...dependents])];
 }
 
-// ─── Store ───────────────────────────────────────────────────────────────────
+function progressMissionsForVisit(
+  state: DemoStore,
+  standId: string,
+  category?: StandCategory,
+): Pick<DemoState, "missionProgress" | "unlockedMissionIds"> {
+  const matchingMissionIds = new Set<string>();
+  const missionCategory = category
+    ? missionCategoryByStandCategory[category]
+    : undefined;
+
+  for (const mission of MISSIONS) {
+    if (
+      mission.standIds?.includes(standId) ||
+      (missionCategory && mission.category === missionCategory)
+    ) {
+      matchingMissionIds.add(mission.id);
+    }
+  }
+
+  matchingMissionIds.add("explorador-expovia");
+  if (state.visitedStandIds.length === 0) {
+    matchingMissionIds.add("primer-contacto");
+  }
+
+  const missionProgress = { ...state.missionProgress };
+  let unlockedMissionIds = [...state.unlockedMissionIds];
+
+  for (const missionId of matchingMissionIds) {
+    const mission = MISSIONS.find((candidate) => candidate.id === missionId);
+    if (!mission || mission.specialAction) continue;
+
+    const previous = missionProgress[missionId] ?? 0;
+    const next = Math.min(previous + 1, mission.target);
+    missionProgress[missionId] = next;
+    unlockedMissionIds = unlockDependents(missionId, next, {
+      specialActionsDone: state.specialActionsDone,
+      unlockedMissionIds,
+    });
+  }
+
+  return { missionProgress, unlockedMissionIds };
+}
 
 export const useDemoStore = create<DemoStore>()(
   persist(
     (set, get) => ({
       ...buildInitialState(),
 
-      // ── Stand visits ────────────────────────────────────────────────────
+      setHasHydrated: () => set({ hasHydrated: true }),
+      setActiveTab: (tab) => set({ activeTab: tab }),
+      selectStand: (standId) => set({ selectedStandId: standId }),
+      selectZone: (zoneId) => set({ selectedZoneId: zoneId }),
 
-      visitStand(standId, standName) {
+      toggleFavorite: (standId) =>
+        set((state) => {
+          if (!standsById.has(standId)) return {};
+
+          const isFavorite = state.favoriteStandIds.includes(standId);
+          return {
+            favoriteStandIds: isFavorite
+              ? state.favoriteStandIds.filter((id) => id !== standId)
+              : [...state.favoriteStandIds, standId],
+          };
+        }),
+
+      visitStand: (standId, standName) =>
+        set((state) => {
+          if (state.visitedStandIds.includes(standId)) return {};
+
+          const points = state.points + VISIT_POINTS;
+          const gamification = progressMissionsForVisit(state, standId);
+          const visit: Visit = {
+            id: `visit-${standId}-${Date.now()}`,
+            standId,
+            standName,
+            visitedAt: new Date().toISOString(),
+            pointsAwarded: VISIT_POINTS,
+          };
+
+          return {
+            ...gamification,
+            visitedStandIds: [...state.visitedStandIds, standId],
+            recentVisits: [visit, ...state.recentVisits].slice(0, 10),
+            points,
+            level: getLevelForPoints(points),
+          };
+        }),
+
+      completeMissionSpecialAction: (missionId) =>
+        set((state) => {
+          if (state.specialActionsDone.includes(missionId)) return {};
+
+          const mission = MISSIONS.find((candidate) => candidate.id === missionId);
+          if (!mission?.specialAction) return {};
+
+          const specialActionsDone = [...state.specialActionsDone, missionId];
+          const missionProgress = {
+            ...state.missionProgress,
+            [missionId]: mission.target,
+          };
+          const unlockedMissionIds = unlockDependents(
+            missionId,
+            mission.target,
+            {
+              specialActionsDone,
+              unlockedMissionIds: state.unlockedMissionIds,
+            },
+          );
+          const points = state.points + mission.rewardPoints;
+
+          return {
+            specialActionsDone,
+            missionProgress,
+            unlockedMissionIds,
+            points,
+            level: getLevelForPoints(points),
+          };
+        }),
+
+      getMissionProgress: (missionId) => get().missionProgress[missionId] ?? 0,
+      getVisibleMissionIds: () => [
+        ...new Set([
+          ...INITIAL_VISIBLE_MISSION_IDS,
+          ...get().unlockedMissionIds,
+        ]),
+      ],
+
+      redeemReward: (rewardId, cost) => {
         const state = get();
-
-        if (state.visitedStandIds.includes(standId)) return;
-
-        const newVisit: DemoVisit = {
-          standId,
-          standName,
-          timestamp: Date.now(),
-        };
-
-        // Update mission progress: any mission whose standIds include this stand
-        const newProgress = { ...state.missionProgress };
-        let newUnlocked = [...state.unlockedMissionIds];
-
-        MISSIONS.forEach((mission) => {
-          if (!mission.standIds?.includes(standId)) return;
-          const prev = newProgress[mission.id] ?? 0;
-          const next = Math.min(prev + 1, mission.target);
-          newProgress[mission.id] = next;
-          newUnlocked = checkAndUnlock(mission.id, next, {
-            ...state,
-            unlockedMissionIds: newUnlocked,
-          });
-        });
-
-        // Also update "explorador-expovia" (any stand)
-        const explorerPrev = newProgress["explorador-expovia"] ?? 0;
-        const explorerNext = Math.min(
-          explorerPrev + 1,
-          MISSIONS.find((m) => m.id === "explorador-expovia")?.target ?? 5,
-        );
-        newProgress["explorador-expovia"] = explorerNext;
-        newUnlocked = checkAndUnlock("explorador-expovia", explorerNext, {
-          ...state,
-          unlockedMissionIds: newUnlocked,
-        });
-
-        // "primer-contacto" — first NFC visit
-        if (state.visitedStandIds.length === 0) {
-          newProgress["primer-contacto"] = 1;
-          newUnlocked = checkAndUnlock("primer-contacto", 1, {
-            ...state,
-            unlockedMissionIds: newUnlocked,
-          });
-        }
-
-        set({
-          visitedStandIds: [...state.visitedStandIds, standId],
-          points: state.points + NFC_VISIT_POINTS,
-          missionProgress: newProgress,
-          unlockedMissionIds: newUnlocked,
-          recentVisits: [newVisit, ...state.recentVisits].slice(0, 20),
-        });
-      },
-
-      toggleFavorite(standId) {
-        const { favoriteStandIds } = get();
-        set({
-          favoriteStandIds: favoriteStandIds.includes(standId)
-            ? favoriteStandIds.filter((id) => id !== standId)
-            : [...favoriteStandIds, standId],
-        });
-      },
-
-      // ── Missions ─────────────────────────────────────────────────────────
-
-      completeMissionSpecialAction(missionId) {
-        const state = get();
-        if (state.specialActionsDone.includes(missionId)) return;
-
-        const mission = MISSIONS.find((m) => m.id === missionId);
-        if (!mission) return;
-
-        const newSpecialDone = [...state.specialActionsDone, missionId];
-        const newProgress = { ...state.missionProgress, [missionId]: mission.target };
-        const newUnlocked = checkAndUnlock(missionId, mission.target, {
-          ...state,
-          specialActionsDone: newSpecialDone,
-        });
-
-        set({
-          specialActionsDone: newSpecialDone,
-          missionProgress: newProgress,
-          unlockedMissionIds: newUnlocked,
-          points: state.points + mission.rewardPoints,
-        });
-      },
-
-      getMissionProgress(missionId) {
-        return get().missionProgress[missionId] ?? 0;
-      },
-
-      getVisibleMissionIds() {
-        const { unlockedMissionIds } = get();
-        return [...INITIAL_VISIBLE_MISSION_IDS, ...unlockedMissionIds];
-      },
-
-      // ── Rewards ───────────────────────────────────────────────────────────
-
-      redeemReward(rewardId, cost) {
-        const state = get();
-        if (state.points < cost) return null;
+        if (cost < 0 || state.points < cost) return null;
         if (state.redeemedRewardIds.includes(rewardId)) return null;
 
-        // Generate a short demo code
-        const code = `DEMO-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+        const code = `DEMO-${Math.random()
+          .toString(36)
+          .slice(2, 6)
+          .toUpperCase()}`;
+        const points = state.points - cost;
 
         set({
-          points: state.points - cost,
+          points,
+          level: getLevelForPoints(points),
           redeemedRewardIds: [...state.redeemedRewardIds, rewardId],
         });
 
         return code;
       },
 
-      // ── NFC ──────────────────────────────────────────────────────────────
+      startNfcScan: (standId) => {
+        const state = get();
 
-      setNfcStage(stage) {
-        set({ nfcStage: stage });
+        if (standId && !standsById.has(standId)) {
+          set({ nfcStage: "error", selectedStandId: null });
+          return;
+        }
+
+        const reusableSelectedStandId =
+          state.selectedStandId &&
+          !state.visitedStandIds.includes(state.selectedStandId)
+            ? state.selectedStandId
+            : null;
+        const target = resolveTargetStand(
+          standId,
+          reusableSelectedStandId,
+          state.visitedStandIds,
+        );
+
+        if (!target) {
+          set({ nfcStage: "error", selectedStandId: null });
+          return;
+        }
+
+        set({ nfcStage: "searching", selectedStandId: target.id });
       },
 
-      // ── Reset ─────────────────────────────────────────────────────────────
+      markNfcDetected: () =>
+        set((state) =>
+          state.nfcStage === "searching" ? { nfcStage: "detected" } : {},
+        ),
+      beginNfcConfirmation: () =>
+        set((state) =>
+          state.nfcStage === "detected" ? { nfcStage: "confirming" } : {},
+        ),
 
-      resetDemo() {
-        set(buildInitialState());
+      confirmVisit: (standId) =>
+        set((state) => {
+          const stand = standsById.get(standId);
+          if (!stand) return { nfcStage: "error" };
+          if (state.visitedStandIds.includes(standId)) {
+            return { nfcStage: "duplicate" };
+          }
+
+          const points = state.points + stand.points;
+          const gamification = progressMissionsForVisit(
+            state,
+            standId,
+            stand.category,
+          );
+          const visit: Visit = {
+            id: `visit-${standId}-${Date.now()}`,
+            standId,
+            standName: stand.name,
+            visitedAt: new Date().toISOString(),
+            pointsAwarded: VISIT_POINTS,
+          };
+
+          return {
+            ...gamification,
+            visitedStandIds: [...state.visitedStandIds, standId],
+            recentVisits: [visit, ...state.recentVisits].slice(0, 10),
+            points,
+            level: getLevelForPoints(points),
+            selectedStandId: standId,
+            nfcStage: "success",
+          };
+        }),
+
+      failNfcScan: () => set({ nfcStage: "error" }),
+      setNfcStage: (stage) => set({ nfcStage: stage }),
+      resetNfcFlow: () => set({ nfcStage: "idle" }),
+
+      resetDemo: () => {
+        set(buildInitialState(true));
+        clearPersistedState();
       },
     }),
     {
-      name: "expovia-demo-v" + STATE_VERSION,
-      version: STATE_VERSION,
+      name: STORAGE_KEY,
+      version: 1,
+      skipHydration: true,
+      storage: createJSONStorage(() => safeDemoStorage),
+      partialize: (state): PersistedDemoStateV1 => ({
+        points: state.points,
+        level: state.level,
+        selectedStandId: state.selectedStandId,
+        selectedZoneId: state.selectedZoneId,
+        visitedStandIds: state.visitedStandIds,
+        favoriteStandIds: state.favoriteStandIds,
+        recentVisits: state.recentVisits,
+        lastKnownLocation: state.lastKnownLocation,
+        missionProgress: state.missionProgress,
+        specialActionsDone: state.specialActionsDone,
+        unlockedMissionIds: state.unlockedMissionIds,
+        redeemedRewardIds: state.redeemedRewardIds,
+      }),
+      merge: (persistedState, currentState) => ({
+        ...currentState,
+        ...parsePersistedState(persistedState),
+      }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated();
+      },
     },
   ),
 );

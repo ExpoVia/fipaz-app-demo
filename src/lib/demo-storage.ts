@@ -1,6 +1,7 @@
 
 import { z } from "zod";
 import { stands, zones } from "@/data/demo-data";
+import { MISSIONS } from "@/data/missions";
 import { getLevelForPoints } from "@/lib/demo-domain";
 import type { PersistedDemoStateV1 } from "@/types/demo";
 
@@ -49,16 +50,32 @@ export const initialPersistedState: PersistedDemoStateV1 = {
     y: 82,
     label: "Entrada principal",
   },
+  // Progreso coherente con las dos visitas simuladas del estado inicial.
+  missionProgress: {
+    "primer-contacto": 1,
+    "ruta-tecnologica": 2,
+    "explorador-expovia": 2,
+  },
+  specialActionsDone: [],
+  unlockedMissionIds: ["maestro-mapa"],
+  redeemedRewardIds: [],
 };
 
 // ─── Esquema Zod ──────────────────────────────────────────────────────────────
 
-const validStandIds = stands.map((stand) => stand.id);
+const validCatalogStandIds = stands.map((stand) => stand.id);
+const validMissionStandIds = MISSIONS.flatMap(
+  (mission) => mission.standIds ?? [],
+);
+const validStandIds = [
+  ...new Set([...validCatalogStandIds, ...validMissionStandIds]),
+];
 const validZoneIds = zones.map((zone) => zone.id);
 
 const visitSchema = z.object({
   id: z.string().min(1),
   standId: z.string().min(1),
+  standName: z.string().min(1).optional(),
   visitedAt: z.string().datetime({ offset: true }),
   pointsAwarded: z.literal(VISIT_POINTS),
 });
@@ -79,6 +96,12 @@ const persistedStateSchema = z.object({
   favoriteStandIds: z.array(z.string().min(1)).max(200),
   recentVisits: z.array(visitSchema).max(10),
   lastKnownLocation: locationSchema,
+  // Los defaults permiten hidratar estados guardados antes de integrar
+  // misiones y recompensas con el store principal.
+  missionProgress: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  specialActionsDone: z.array(z.string().min(1)).default([]),
+  unlockedMissionIds: z.array(z.string().min(1)).default([]),
+  redeemedRewardIds: z.array(z.string().min(1)).default([]),
 });
 
 // ─── Normalización post-validación ────────────────────────────────────────────
@@ -94,6 +117,7 @@ function normalizePersistedState(
   raw: z.infer<typeof persistedStateSchema>
 ): PersistedDemoStateV1 {
   const validIds = new Set(validStandIds);
+  const validCatalogIds = new Set(validCatalogStandIds);
   const validZones = new Set(validZoneIds);
 
   const visitedStandIds = [
@@ -123,7 +147,7 @@ function normalizePersistedState(
   const level = getLevelForPoints(raw.points);
 
   const selectedStandId =
-    raw.selectedStandId && validIds.has(raw.selectedStandId)
+    raw.selectedStandId && validCatalogIds.has(raw.selectedStandId)
       ? raw.selectedStandId
       : null;
 
@@ -202,6 +226,10 @@ export function cloneInitialPersistedState(): PersistedDemoStateV1 {
       ...visit,
     })),
     lastKnownLocation: { ...initialPersistedState.lastKnownLocation },
+    missionProgress: { ...initialPersistedState.missionProgress },
+    specialActionsDone: [...initialPersistedState.specialActionsDone],
+    unlockedMissionIds: [...initialPersistedState.unlockedMissionIds],
+    redeemedRewardIds: [...initialPersistedState.redeemedRewardIds],
   };
 }
 

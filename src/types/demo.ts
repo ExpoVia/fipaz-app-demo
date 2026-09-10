@@ -118,6 +118,8 @@ export interface DemoLocation {
 export interface Visit {
   id: string;
   standId: string;
+  /** Nombre de respaldo para visitas simuladas que no pertenecen al catálogo NFC. */
+  standName?: string;
   /** ISO 8601 */
   visitedAt: string;
   pointsAwarded: number;
@@ -136,6 +138,10 @@ export interface DemoState {
   recentVisits: Visit[];
   lastKnownLocation: DemoLocation;
   nfcStage: NfcStage;
+  missionProgress: Record<string, number>;
+  specialActionsDone: string[];
+  unlockedMissionIds: string[];
+  redeemedRewardIds: string[];
   /** true después de que el middleware persist hidrata desde localStorage. */
   hasHydrated: boolean;
 }
@@ -150,6 +156,13 @@ export interface DemoActions {
   selectZone(zoneId: string | null): void;
   toggleFavorite(standId: string): void;
 
+  /** Registra una visita iniciada desde una misión simulada. */
+  visitStand(standId: string, standName: string): void;
+  completeMissionSpecialAction(missionId: string): void;
+  getMissionProgress(missionId: string): number;
+  getVisibleMissionIds(): string[];
+  redeemReward(rewardId: string, cost: number): string | null;
+
   /** Inicia el flujo NFC con un stand opcional; resuelve el stand objetivo. */
   startNfcScan(standId?: string): void;
   /** Avanza de `searching` a `detected`. Lo llama el temporizador de NfcScreen. */
@@ -163,6 +176,8 @@ export interface DemoActions {
   confirmVisit(standId: string): void;
   /** Avanza cualquier estado a `error`. */
   failNfcScan(): void;
+  /** Permite que otros módulos sincronicen una etapa del flujo NFC. */
+  setNfcStage(stage: NfcStage): void;
   /** Resetea el flujo NFC a `idle` sin tocar datos de visitas. */
   resetNfcFlow(): void;
   /** Restaura el estado inicial completo y limpia la clave de localStorage. */
@@ -186,4 +201,8 @@ export interface PersistedDemoStateV1 {
   favoriteStandIds: string[];
   recentVisits: Visit[];
   lastKnownLocation: DemoLocation;
+  missionProgress: Record<string, number>;
+  specialActionsDone: string[];
+  unlockedMissionIds: string[];
+  redeemedRewardIds: string[];
 }
