@@ -1,6 +1,6 @@
 import type { ElementType } from "react";
 
-export type StandCategory = "technology" | "health" | "food" | "finance";
+export type StandCategory = "technology" | "health" | "food" | "finance" | "unassigned";
 
 export type PoiType =
   | "entrance"
@@ -39,6 +39,10 @@ export interface Stand {
   summary: string;
   routeHint: string;
   featured?: boolean;
+  planId?: string;
+  area?: number;
+  fill?: string;
+  demo?: boolean;
 }
 
 export interface Poi {
@@ -47,12 +51,26 @@ export interface Poi {
   label: string;
   x: number;
   y: number;
+  planId?: string;
 }
 
 export interface RouteDefinition {
   standId: string;
   points: string;
   instruction: string;
+  planId?: string;
+}
+
+export interface MapPlan {
+  id: string;
+  zoneId: string;
+  name: string;
+  level: "Planta baja" | "Planta alta" | "Exterior";
+  color: string;
+  viewBox: string;
+  outline: string;
+  structures: { path: string; label?: string; x?: number; y?: number }[];
+  origin: { x: number; y: number };
 }
 
 export interface CategoryMeta {
