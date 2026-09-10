@@ -1,291 +1,211 @@
 "use client";
 
-import { LocateFixed, Minus, Plus, RotateCcw, Route, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
-import { categoryMeta, expoStands, poiMeta, routeDefinitions, zones } from "../data/expoMapData";
-import type { ExpoMapProps, PoiType, RouteDefinition, StandCategory } from "../types";
+import { ArrowLeft, Check, List, LocateFixed, Minus, Plus, RotateCcw, Route, Search, SlidersHorizontal, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { TransformComponent, TransformWrapper, type ReactZoomPanPinchRef } from "react-zoom-pan-pinch";
+import { categoryMeta, expoStands, mapPlans, poiMeta, routeDefinitions, zones } from "../data/expoMapData";
+import type { ExpoMapProps, PoiType, StandCategory } from "../types";
 import { ExpoMapSvg } from "./ExpoMapSvg";
-
-type ZoomLevel = "general" | "zone" | "stand";
-type ZoomToElement = (node: string, scale?: number, animationTime?: number) => void;
+import styles from "./map.module.css";
 
 const allCategories = categoryMeta.map((category) => category.id);
 const allPoiTypes = poiMeta.map((poi) => poi.id);
-
-function getZoomLevel(scale: number): ZoomLevel {
-  if (scale >= 2.4) {
-    return "stand";
-  }
-
-  if (scale >= 1.5) {
-    return "zone";
-  }
-
-  return "general";
+function toggle<T extends string>(items: T[], item: T) { return items.includes(item) ? items.filter((value) => value !== item) : [...items, item]; }
+function resolvePlan(id?: string | null) { return mapPlans.find((plan) => plan.id === id || plan.zoneId === id)?.id ?? null; }
+function IconButton({ label, children, onClick, pressed }: { label: string; children: ReactNode; onClick: () => void; pressed?: boolean }) {
+  return <button type="button" aria-label={label} title={label} aria-pressed={pressed} className={styles.iconButton} onClick={onClick}>{children}</button>;
 }
 
-function toggleItem<T extends string>(items: T[], item: T, fallback: T[]) {
-  if (items.includes(item)) {
-    const nextItems = items.filter((current) => current !== item);
-    return nextItems.length > 0 ? nextItems : fallback;
-  }
-
-  return [...items, item];
-}
-
-function InitialZoneFocus({
-  initialZoneId,
-  zoomToElement,
-}: {
-  initialZoneId: string | null;
-  zoomToElement: ZoomToElement;
-}) {
-  const appliedRef = useRef(false);
-
-  useEffect(() => {
-    if (!initialZoneId || appliedRef.current) {
-      return;
-    }
-
-    appliedRef.current = true;
-    window.setTimeout(() => zoomToElement(`zone-${initialZoneId}`, 1.85, 0), 50);
-  }, [initialZoneId, zoomToElement]);
-
-  return null;
-}
-
-export function ExpoInteractiveMap({
-  stands,
-  selectedStandId,
-  visitedStandIds,
-  onSelectStand,
-  onOpenStand,
-  initialZoneId = null,
-}: ExpoMapProps) {
+export function ExpoInteractiveMap({ stands, selectedStandId, visitedStandIds, onSelectStand, onOpenStand, initialZoneId = null }: ExpoMapProps) {
+  const idPrefix = useId().replaceAll(":", "");
+  const [planId, setPlanId] = useState<string | null>(() => resolvePlan(stands.find((stand) => stand.id === selectedStandId)?.planId ?? initialZoneId));
   const [scale, setScale] = useState(1);
   const [activeCategories, setActiveCategories] = useState<StandCategory[]>(allCategories);
   const [activePoiTypes, setActivePoiTypes] = useState<PoiType[]>(allPoiTypes);
-  const [activeRoute, setActiveRoute] = useState<RouteDefinition | null>(null);
-  const [sheetStandId, setSheetStandId] = useState<string | null>(selectedStandId);
+  const [routeId, setRouteId] = useState<string | null>(null);
+  const [sheetId, setSheetId] = useState<string | null>(selectedStandId);
+  const [previousSelectedId, setPreviousSelectedId] = useState(selectedStandId);
+  const [panel, setPanel] = useState<"filters" | "list" | null>(null);
+  const [query, setQuery] = useState("");
+  const [reducedMotion, setReducedMotion] = useState(true);
+  const [compact, setCompact] = useState(true);
+  const transform = useRef<ReactZoomPanPinchRef | null>(null);
+  const root = useRef<HTMLElement | null>(null);
+  const closeButton = useRef<HTMLButtonElement | null>(null);
+  const pendingFocus = useRef<string | null>(selectedStandId ? `stand-${selectedStandId}` : initialZoneId ? "floor-outline" : null);
+  const returnFocus = useRef<HTMLElement | SVGElement | null>(null);
 
-  const selectedStand = useMemo(
-    () => stands.find((stand) => stand.id === sheetStandId) ?? null,
-    [sheetStandId, stands],
-  );
+  // Synchronize controlled selection, while allowing the sheet to close locally.
+  if (previousSelectedId !== selectedStandId) {
+    setPreviousSelectedId(selectedStandId);
+    setSheetId(selectedStandId);
+    setRouteId(null);
+    const selected = stands.find((stand) => stand.id === selectedStandId);
+    if (selected?.planId && resolvePlan(selected.planId)) {
+      setPlanId(selected.planId);
+      setActiveCategories((items) => items.includes(selected.category) ? items : [...items, selected.category]);
+    }
+  }
 
-  return (
-    <section className="relative flex h-full min-h-[720px] w-full flex-col overflow-hidden bg-[#eef7fb] text-[#12213a]">
-      <TransformWrapper
-        centerOnInit
-        doubleClick={{ mode: "zoomIn" }}
-        initialScale={1}
-        maxScale={4}
-        minScale={1}
-        onTransform={(_, state) => setScale(state.scale)}
-        wheel={{ step: 0.16 }}
-      >
-        {({ resetTransform, zoomIn, zoomOut, zoomToElement }) => {
-          const focusZone = (zoneId: string) => {
-            setActiveRoute(null);
-            zoomToElement(`zone-${zoneId}`, 1.85, 420);
-          };
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(media.matches);
+    update(); media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
-          const focusStand = (standId: string) => {
-            setActiveRoute(null);
-            setSheetStandId(standId);
-            onSelectStand(standId);
-            onOpenStand(standId);
-            zoomToElement(`stand-${standId}`, 2.75, 360);
-          };
+  useEffect(() => {
+    if (!root.current) return;
+    const observer = new ResizeObserver(([entry]) => setCompact(entry.contentRect.width < 700));
+    observer.observe(root.current);
+    return () => observer.disconnect();
+  }, []);
 
-          const routeToStand = (standId: string) => {
-            const route = routeDefinitions.find((item) => item.standId === standId) ?? routeDefinitions[0];
-            setActiveRoute(route);
-            zoomToElement("you-are-here", 2.25, 360);
-          };
+  useEffect(() => {
+    if (sheetId) closeButton.current?.focus({ preventScroll: true });
+  }, [sheetId]);
 
-          return (
-            <>
-              <InitialZoneFocus initialZoneId={initialZoneId} zoomToElement={zoomToElement} />
-              <div className="z-20 border-b border-[#d8e3ef] bg-white/95 px-3 py-3 shadow-sm backdrop-blur">
-                <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                  {categoryMeta.map((category) => {
-                    const isActive = activeCategories.includes(category.id);
-                    return (
-                      <button
-                        aria-pressed={isActive}
-                        className={`min-h-10 shrink-0 border px-3 text-sm font-black transition ${
-                          isActive
-                            ? "border-[#152442] bg-[#152442] text-white"
-                            : "border-[#cbd5e1] bg-white text-[#34435f]"
-                        }`}
-                        key={category.id}
-                        onClick={() => setActiveCategories((items) => toggleItem(items, category.id, allCategories))}
-                        type="button"
-                      >
-                        {category.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-1">
-                  {poiMeta.map((poi) => {
-                    const Icon = poi.icon;
-                    const isActive = activePoiTypes.includes(poi.id);
-                    return (
-                      <button
-                        aria-label={`Filtrar ${poi.label}`}
-                        aria-pressed={isActive}
-                        className={`grid h-10 w-10 shrink-0 place-items-center border transition ${
-                          isActive
-                            ? "border-[#0067d8] bg-[#e7f1ff] text-[#0056b3]"
-                            : "border-[#cbd5e1] bg-white text-[#526071]"
-                        }`}
-                        key={poi.id}
-                        onClick={() => setActivePoiTypes((items) => toggleItem(items, poi.id, allPoiTypes))}
-                        title={poi.label}
-                        type="button"
-                      >
-                        <Icon aria-hidden="true" size={20} strokeWidth={2.5} />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+  const plan = mapPlans.find((item) => item.id === planId) ?? null;
+  const selectedStand = stands.find((stand) => stand.id === sheetId && stand.planId === planId) ?? null;
+  const activeRoute = routeDefinitions.find((route) => route.standId === routeId && route.planId === planId) ?? null;
+  const availableRoute = routeDefinitions.find((route) => route.standId === sheetId && route.planId === planId);
+  const duration = reducedMotion ? 0 : 280;
+  const results = useMemo(() => {
+    const search = query.trim().toLocaleLowerCase();
+    return stands.filter((stand) => (!planId || stand.planId === planId) && activeCategories.includes(stand.category) && (!search || `${stand.code} ${stand.name}`.toLocaleLowerCase().includes(search)));
+  }, [stands, planId, activeCategories, query]);
 
-              <div className="relative min-h-0 flex-1">
-                <TransformComponent
-                  contentClass="!h-full !w-full"
-                  wrapperClass="!h-full !w-full cursor-grab active:cursor-grabbing"
-                >
-                  <ExpoMapSvg
-                    activeCategories={activeCategories}
-                    activePoiTypes={activePoiTypes}
-                    activeRoute={activeRoute}
-                    onStandPress={focusStand}
-                    onZonePress={focusZone}
-                    selectedStandId={selectedStandId}
-                    stands={stands}
-                    visitedStandIds={visitedStandIds}
-                    zoomLevel={getZoomLevel(scale)}
-                  />
-                </TransformComponent>
+  function zoomTo(id: string, zoom: number, time = duration) {
+    const target = root.current?.querySelector(`[id="${CSS.escape(`${idPrefix}-${id}`)}"]`);
+    if (target) void transform.current?.zoomToElement(target.id, { scale: zoom, animationTime: time, offsetY: sheetId ? -75 : 0 });
+  }
+  function changePlan(id: string | null) {
+    setPlanId(id); setSheetId(null); setRouteId(null); setPanel(null); setQuery(""); setScale(1);
+    pendingFocus.current = id ? "floor-outline" : null;
+  }
+  function focusStand(id: string) {
+    const stand = stands.find((item) => item.id === id);
+    if (!stand?.planId || !resolvePlan(stand.planId)) return;
+    returnFocus.current = document.activeElement as HTMLElement | SVGElement;
+    setPanel(null); setSheetId(id); setRouteId(null);
+    if (stand.planId !== planId) { pendingFocus.current = `stand-${id}`; setPlanId(stand.planId); }
+    else zoomTo(`stand-${id}`, 3.2);
+    onSelectStand(id);
+  }
+  function closeSheet() {
+    setSheetId(null); setRouteId(null);
+    if (returnFocus.current?.isConnected) returnFocus.current.focus({ preventScroll: true });
+    else root.current?.querySelector<SVGElement>(`[id="${CSS.escape(`${idPrefix}-stand-${sheetId}`)}"]`)?.focus({ preventScroll: true });
+  }
 
-                <div className="pointer-events-none absolute inset-x-3 bottom-4 z-20 flex items-end justify-between gap-3">
-                  <div className="pointer-events-auto flex items-center gap-2 border border-[#cbd5e1] bg-white p-1 shadow-[4px_4px_0_#172554]">
-                    <button aria-label="Acercar" className="grid h-10 w-10 place-items-center bg-[#e7f1ff] text-[#0056b3]" onClick={() => zoomIn(0.55)} type="button">
-                      <Plus aria-hidden="true" size={20} strokeWidth={3} />
-                    </button>
-                    <button aria-label="Alejar" className="grid h-10 w-10 place-items-center bg-[#f8fafc] text-[#334155]" onClick={() => zoomOut(0.55)} type="button">
-                      <Minus aria-hidden="true" size={20} strokeWidth={3} />
-                    </button>
-                    <button aria-label="Centrar" className="grid h-10 w-10 place-items-center bg-[#f8fafc] text-[#334155]" onClick={() => resetTransform(320)} type="button">
-                      <RotateCcw aria-hidden="true" size={18} strokeWidth={2.6} />
-                    </button>
-                  </div>
-                  <button
-                    aria-label="¿Dónde estoy?"
-                    className="pointer-events-auto inline-flex min-h-11 items-center gap-2 border border-[#0284c7] bg-white px-3 text-sm font-black text-[#075985] shadow-[4px_4px_0_#0c4a6e]"
-                    onClick={() => zoomToElement("you-are-here", 2.2, 360)}
-                    type="button"
-                  >
-                    <LocateFixed aria-hidden="true" size={18} strokeWidth={2.8} />
-                    ¿Dónde estoy?
-                  </button>
-                </div>
+  return <section ref={root} className={styles.root} aria-label="Mapa FIPAZ 2026" onKeyDown={(event) => {
+    if (event.key === "Escape") { if (panel) setPanel(null); else closeSheet(); }
+  }}>
+    <header className={styles.header}>
+      <div className={styles.heading}>
+        <div><h1>FIPAZ 2026</h1><p className={styles.muted}>Mapa demostrativo · Referencias proporcionadas</p></div>
+        <div style={{ display: "flex", gap: 5 }}>
+          <IconButton label="Buscar espacios" pressed={panel === "list"} onClick={() => setPanel(panel === "list" ? null : "list")}><List size={18} /></IconButton>
+          <IconButton label="Filtros" pressed={panel === "filters"} onClick={() => setPanel(panel === "filters" ? null : "filters")}><SlidersHorizontal size={18} /></IconButton>
+        </div>
+      </div>
+      <div className={styles.row}>
+        {plan && <IconButton label="Volver al recinto" onClick={() => changePlan(null)}><ArrowLeft size={18} /></IconButton>}
+        <select aria-label="Bloque o plaza" className={styles.select} value={plan?.zoneId ?? ""} onChange={(event) => changePlan(resolvePlan(event.target.value))}>
+          <option value="">Todo el recinto</option>
+          {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
+          <option value="entrance">Plaza Akapana · Ingreso</option><option value="food">Patio de comidas</option>
+        </select>
+      </div>
+      {plan && <>
+        <div className={styles.row}><div className={styles.tabs} aria-label="Planta">
+          {mapPlans.filter((item) => item.zoneId === plan.zoneId).map((item) => <button type="button" key={item.id} aria-pressed={item.id === planId} onClick={() => { if (item.id !== planId) changePlan(item.id); }}>{item.level}</button>)}
+        </div></div>
+        <p className={styles.title} aria-live="polite">{plan.name}</p>
+      </>}
+    </header>
 
-                <div className="absolute left-3 top-3 z-10 rounded-sm border border-[#d8e3ef] bg-white/90 px-3 py-2 text-xs font-black uppercase text-[#526071]">
-                  Zoom {scale.toFixed(1)}x
-                </div>
-              </div>
-
-              <aside className="z-10 border-t border-[#d8e3ef] bg-white px-3 py-3">
-                <div className="flex gap-2 overflow-x-auto">
-                  {zones.map((zone) => (
-                    <button
-                      className="min-h-10 shrink-0 border border-[#cbd5e1] bg-[#f8fafc] px-3 text-sm font-black text-[#24324c]"
-                      key={zone.id}
-                      onClick={() => focusZone(zone.id)}
-                      type="button"
-                    >
-                      {zone.name}
-                    </button>
-                  ))}
-                </div>
-              </aside>
-
-              {selectedStand ? (
-                <div className="absolute inset-x-0 bottom-0 z-30 border-t-2 border-[#172554] bg-white shadow-2xl">
-                  <div className="bg-[linear-gradient(90deg,#eef7ff,#fff4cd)] px-4 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="grid h-12 w-12 shrink-0 place-items-center border-2 border-[#172554] bg-[#172554] font-mono text-sm font-black text-white">
-                          {selectedStand.logoText}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-mono text-xs font-black uppercase text-[#526071]">{selectedStand.code}</p>
-                          <h2 className="truncate text-xl font-black text-[#12213a]">{selectedStand.name}</h2>
-                        </div>
-                      </div>
-                      <button
-                        aria-label="Cerrar ficha"
-                        className="grid h-10 w-10 shrink-0 place-items-center border border-[#cbd5e1] bg-white text-[#334155]"
-                        onClick={() => {
-                          setSheetStandId(null);
-                          setActiveRoute(null);
-                        }}
-                        type="button"
-                      >
-                        <X aria-hidden="true" size={20} strokeWidth={2.6} />
-                      </button>
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-[#475569]">{selectedStand.summary}</p>
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <button
-                        className="inline-flex min-h-11 items-center gap-2 border-2 border-[#172554] bg-[#ffe08a] px-3 text-sm font-black text-[#172554] shadow-[3px_3px_0_#172554]"
-                        onClick={() => routeToStand(selectedStand.id)}
-                        type="button"
-                      >
-                        <Route aria-hidden="true" size={18} strokeWidth={2.8} />
-                        Como llegar
-                      </button>
-                      {activeRoute ? (
-                        <button
-                          className="min-h-11 border border-[#fecaca] bg-[#fff1f2] px-3 text-sm font-black text-[#991b1b]"
-                          onClick={() => setActiveRoute(null)}
-                          type="button"
-                        >
-                          Cancelar ruta
-                        </button>
-                      ) : null}
-                    </div>
-                    {activeRoute ? (
-                      <p className="mt-3 border-l-4 border-[#ef4444] bg-white px-3 py-2 text-sm font-bold text-[#334155]">
-                        Ruta aproximada de demostracion. {activeRoute.instruction}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-            </>
-          );
-        }}
+    <div className={styles.canvas}>
+      <TransformWrapper key={planId ?? "overview"} ref={transform} centerOnInit initialScale={1} minScale={1} maxScale={4} wheel={{ step: .16 }} doubleClick={{ mode: "zoomIn", animationTime: duration }} zoomAnimation={{ disabled: reducedMotion }} autoAlignment={{ animationTime: duration, velocityAlignmentTime: duration }} velocityAnimation={{ disabled: reducedMotion }} onTransform={(_, state) => setScale(state.scale)} onInit={(ref) => {
+        transform.current = ref;
+        const target = pendingFocus.current;
+        if (target) {
+          requestAnimationFrame(() => {
+            zoomTo(target, target === "floor-outline" ? 1.5 : target === "you-are-here" ? 2.4 : 3.2, 0);
+          });
+          pendingFocus.current = null;
+        }
+      }}>
+        <TransformComponent wrapperStyle={{ width: "100%", height: "100%" }} contentStyle={{ width: "100%", height: "100%" }}>
+          <ExpoMapSvg compact={compact} idPrefix={idPrefix} plan={plan} stands={stands} selectedStandId={sheetId} visitedStandIds={visitedStandIds} activeCategories={activeCategories} activePoiTypes={activePoiTypes} zoomLevel={scale >= 2.4 ? "stand" : scale >= 1.5 ? "zone" : "general"} activeRoute={activeRoute} reducedMotion={reducedMotion} onPlanPress={changePlan} onStandPress={focusStand} />
+        </TransformComponent>
       </TransformWrapper>
-    </section>
-  );
+      <span className={styles.zoom} data-testid="map-zoom">{scale.toFixed(1)}x</span>
+      <div className={styles.controls}>
+        <IconButton label="Acercar" onClick={() => { void transform.current?.zoomIn(.5, duration); }}><Plus size={18} /></IconButton>
+        <IconButton label="Alejar" onClick={() => { void transform.current?.zoomOut(.5, duration); }}><Minus size={18} /></IconButton>
+        <IconButton label="Centrar" onClick={() => { void transform.current?.resetTransform(duration); }}><RotateCcw size={17} /></IconButton>
+        <IconButton label="¿Dónde estoy?" onClick={() => {
+          setSheetId(null); setRouteId(null);
+          if (!plan) { changePlan("entrance"); pendingFocus.current = "you-are-here"; }
+          else zoomTo("you-are-here", 2.4);
+        }}><LocateFixed size={18} /></IconButton>
+      </div>
+    </div>
+    <footer className={styles.footer}><span>{plan ? `${results.length} espacios` : "3 bloques · 7 planos"}</span><span><span className={styles.dot} />{plan ? "Ubicacion simulada en el acceso" : "Chuquiago Marka"}</span></footer>
+
+    {panel && <aside className={styles.panel} aria-label={panel === "filters" ? "Filtros del mapa" : "Directorio de espacios"}>
+      <div className={styles.panelTitle}>{panel === "filters" ? "Filtros" : "Espacios"}<IconButton label="Cerrar panel" onClick={() => setPanel(null)}><X size={16} /></IconButton></div>
+      {panel === "filters" ? <>
+        <fieldset><legend>Rubros</legend>{categoryMeta.map((meta) => <label key={meta.id} className={styles.check}><input type="checkbox" checked={activeCategories.includes(meta.id)} onChange={() => { setActiveCategories(toggle(activeCategories, meta.id)); closeSheet(); }} />{meta.label}</label>)}</fieldset>
+        <fieldset><legend>Servicios</legend>{poiMeta.map((meta) => <label key={meta.id} className={styles.check}><input type="checkbox" checked={activePoiTypes.includes(meta.id)} onChange={() => setActivePoiTypes(toggle(activePoiTypes, meta.id))} /><meta.icon size={15} />{meta.label}</label>)}</fieldset>
+        <button className={styles.command} type="button" onClick={() => { setActiveCategories(allCategories); setActivePoiTypes(allPoiTypes); }}><RotateCcw size={15} />Restablecer</button>
+      </> : <>
+        <label className={styles.search}><Search size={16} /><input aria-label="Numero o expositor" placeholder="Numero o expositor" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+        <div className={styles.results}>{results.map((stand) => <button type="button" key={stand.id} className={styles.result} onClick={() => focusStand(stand.id)}>
+          <span className={styles.code}>{stand.code}</span><span>{stand.name}{stand.demo ? " (demo)" : ""}<small>{mapPlans.find((item) => item.id === stand.planId)?.name}</small></span>{visitedStandIds.includes(stand.id) && <Check size={15} aria-label="Visitado" />}
+        </button>)}{results.length === 0 && <p className={styles.muted}>Sin resultados.</p>}</div>
+      </>}
+    </aside>}
+
+    {selectedStand && <aside className={styles.sheet} aria-label="Ficha del espacio">
+      <div className={styles.heading}><div><span className={styles.muted}>{plan?.name} · {plan?.level} · Espacio {selectedStand.code}</span><h2>{selectedStand.name}</h2></div><button ref={closeButton} type="button" className={styles.iconButton} aria-label="Cerrar ficha" title="Cerrar ficha" onClick={closeSheet}><X size={18} /></button></div>
+      <p>{selectedStand.summary}</p>
+      {selectedStand.area !== undefined && <p>Superficie indicada: {selectedStand.area} m²</p>}
+      <div className={styles.row} style={{ flexWrap: "wrap" }}>
+        <button type="button" className={styles.command} disabled={!availableRoute} onClick={() => {
+          if (!availableRoute) return;
+          setRouteId(availableRoute.standId);
+          requestAnimationFrame(() => {
+            void transform.current?.zoomToElement([`${idPrefix}-route`, `${idPrefix}-stand-${availableRoute.standId}`], { minScale: 1, maxScale: 1.25, animationTime: duration, offsetY: -100 });
+          });
+        }}><Route size={16} />Como llegar</button>
+        {selectedStand.demo && <button type="button" className={styles.command} onClick={() => onOpenStand(selectedStand.id)}>Ver expositor</button>}
+        {activeRoute && <button type="button" className={styles.command} onClick={() => setRouteId(null)}><X size={15} />Cancelar ruta</button>}
+      </div>
+      <p className={styles.muted} role="status">{activeRoute ? `Ruta aproximada de demostracion. ${activeRoute.instruction}` : availableRoute ? "Origen simulado: acceso de este plano." : "Ruta demostrativa no disponible para este espacio."}</p>
+    </aside>}
+  </section>;
 }
 
 export function ExpoMapDemoScreen() {
   const [selectedStandId, setSelectedStandId] = useState<string | null>(null);
-
-  return (
-    <ExpoInteractiveMap
-      onOpenStand={setSelectedStandId}
-      onSelectStand={setSelectedStandId}
-      selectedStandId={selectedStandId}
-      stands={expoStands}
-      visitedStandIds={["red-02", "yellow-04", "green-01"]}
-    />
-  );
+  const [openStandId, setOpenStandId] = useState<string | null>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const openStand = expoStands.find((stand) => stand.id === openStandId);
+  const openPlan = mapPlans.find((plan) => plan.id === openStand?.planId);
+  useEffect(() => {
+    if (openStandId) dialog.current?.showModal();
+  }, [openStandId]);
+  return <>
+    <ExpoInteractiveMap stands={expoStands} selectedStandId={selectedStandId} visitedStandIds={["red-lower-14", "yellow-lower-4", "green-upper-5"]} onSelectStand={setSelectedStandId} onOpenStand={setOpenStandId} />
+    <dialog ref={dialog} className={styles.exhibitorDialog} aria-label="Expositor demostrativo" onClose={() => setOpenStandId(null)}>
+      {openStand && <>
+        <div className={styles.heading}><div><p className={styles.muted}>Expositor demostrativo</p><h2>{openStand.name}</h2></div><IconButton label="Cerrar expositor" onClick={() => dialog.current?.close()}><X size={18} /></IconButton></div>
+        <p>{openStand.summary}</p>
+        <dl><dt>Ubicacion</dt><dd>{openPlan?.name} · {openPlan?.level} · Espacio {openStand.code}</dd><dt>Rubro</dt><dd>{categoryMeta.find((category) => category.id === openStand.category)?.label}</dd></dl>
+        <button type="button" className={styles.command} onClick={() => dialog.current?.close()}><ArrowLeft size={16} />Volver al mapa</button>
+      </>}
+    </dialog>
+  </>;
 }
