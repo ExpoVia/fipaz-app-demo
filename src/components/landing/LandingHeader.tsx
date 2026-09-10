@@ -20,7 +20,7 @@ export function LandingHeader() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b-2 border-[var(--expo-line)] bg-white/90 backdrop-blur-md">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5 sm:px-6 sm:py-3 lg:px-8">
         {/* Brand Logo */}
         <Link href="#inicio" className="group flex items-center transition-transform hover:scale-105">
           <PixelLogo />
@@ -32,7 +32,8 @@ export function LandingHeader() {
             <a
               key={link.name}
               href={link.href}
-              className="rounded-md px-3 py-2 text-sm font-bold text-[var(--expo-navy)] transition-colors hover:bg-[var(--expo-bg)] hover:text-[var(--expo-blue)]"
+              aria-current={link.href === "#inicio" ? "page" : undefined}
+              className={`rounded-md px-3 py-2 text-sm font-bold transition-colors hover:bg-[var(--expo-bg)] hover:text-[var(--expo-blue)] ${link.href === "#inicio" ? "bg-[var(--expo-bg)] text-[var(--expo-blue)]" : "text-[var(--expo-navy)]"}`}
             >
               {link.name}
             </a>
@@ -72,7 +73,7 @@ export function LandingHeader() {
 
       {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
-        <div className="border-b-2 border-[var(--expo-navy)] bg-white px-4 pt-2 pb-6 lg:hidden shadow-lg animate-in slide-in-from-top-2">
+        <div className="max-h-[calc(100vh-64px)] overflow-y-auto border-b-2 border-[var(--expo-navy)] bg-white px-4 pt-2 pb-6 shadow-lg animate-in slide-in-from-top-2 lg:hidden">
           <div className="flex flex-col space-y-2">
             {navLinks.map((link) => (
               <a
