@@ -1,12 +1,65 @@
 "use client";
 
+import { useState } from "react";
+import { Compass, Gift, MapPinned, Trophy } from "lucide-react";
+
 import { AppShell, type AppShellScreens } from "@/components/app-shell";
+import { ModulePlaceholder } from "@/components/shared";
 import { MissionsScreen } from "@/features/missions/MissionsScreen";
+import { NfcShellScreen } from "@/features/nfc";
+import { ProfileShellScreen } from "@/features/profile";
 import { RewardsScreen } from "@/features/rewards/RewardsScreen";
 
-// Import placeholder + existing screens
-import { Compass, MapPinned, ScanLine, UserRound } from "lucide-react";
-import { ModulePlaceholder } from "@/components/shared";
+type GamificationView = "missions" | "rewards";
+
+function GamificationHub() {
+  const [view, setView] = useState<GamificationView>("missions");
+
+  return (
+    <div className="min-h-full bg-[var(--expo-bg)]">
+      <div className="sticky top-0 z-20 border-b-2 border-[var(--expo-line)] bg-white/95 px-4 py-3 backdrop-blur">
+        <div
+          className="grid grid-cols-2 gap-2 rounded-2xl border-2 border-[var(--expo-navy)] bg-[var(--expo-bg)] p-1.5 shadow-[3px_3px_0_var(--expo-navy)]"
+          role="tablist"
+          aria-label="Misiones y premios"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "missions"}
+            onClick={() => setView("missions")}
+            className={`flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black transition-colors ${
+              view === "missions"
+                ? "bg-[var(--expo-purple)] text-white"
+                : "text-[var(--expo-navy)] hover:bg-white"
+            }`}
+          >
+            <Trophy aria-hidden="true" size={17} />
+            Misiones
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "rewards"}
+            onClick={() => setView("rewards")}
+            className={`flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black transition-colors ${
+              view === "rewards"
+                ? "bg-[var(--expo-pink)] text-[var(--expo-navy)]"
+                : "text-[var(--expo-navy)] hover:bg-white"
+            }`}
+          >
+            <Gift aria-hidden="true" size={17} />
+            Premios
+          </button>
+        </div>
+      </div>
+
+      <div role="tabpanel">
+        {view === "missions" ? <MissionsScreen /> : <RewardsScreen />}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Client-side demo app wrapper.
@@ -72,29 +125,9 @@ export function DemoAppClient() {
         </div>
       </ModulePlaceholder>
     ),
-    scan: (
-      <ModulePlaceholder
-        eyebrow="Simulación NFC"
-        title="Acerca tu teléfono"
-        description="Erick conectará aquí la detección, confirmación, puntos y control de duplicados."
-        icon={<ScanLine aria-hidden="true" size={25} strokeWidth={2.5} />}
-        accent="yellow"
-      >
-        <div className="pixel-card grid min-h-80 place-items-center overflow-hidden p-6 text-center">
-          <div>
-            <div className="nfc-pulse mx-auto grid size-28 place-items-center rounded-3xl border-4 border-[var(--expo-navy)] bg-[var(--expo-blue)] text-white shadow-[7px_7px_0_var(--expo-navy)]">
-              <ScanLine aria-hidden="true" size={52} strokeWidth={2} />
-            </div>
-            <p className="mt-8 font-black text-[var(--expo-navy)]">Escáner preparado</p>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Este flujo estará identificado siempre como una simulación.
-            </p>
-          </div>
-        </div>
-      </ModulePlaceholder>
-    ),
-    missions: <MissionsScreen />,
-    profile: <RewardsScreen />,
+    scan: <NfcShellScreen />,
+    missions: <GamificationHub />,
+    profile: <ProfileShellScreen />,
   };
 
   return <AppShell screens={screens} />;
