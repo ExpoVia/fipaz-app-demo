@@ -32,7 +32,8 @@ export function LandingHeader() {
             <a
               key={link.name}
               href={link.href}
-              className="rounded-md px-3 py-2 text-sm font-bold text-[var(--expo-navy)] transition-colors hover:bg-[var(--expo-bg)] hover:text-[var(--expo-blue)]"
+              aria-current={link.href === "#inicio" ? "page" : undefined}
+              className={`rounded-md px-3 py-2 text-sm font-bold transition-colors hover:bg-[var(--expo-bg)] hover:text-[var(--expo-blue)] ${link.href === "#inicio" ? "bg-[var(--expo-bg)] text-[var(--expo-blue)]" : "text-[var(--expo-navy)]"}`}
             >
               {link.name}
             </a>
