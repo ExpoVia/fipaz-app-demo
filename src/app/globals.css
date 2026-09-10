@@ -21,12 +21,328 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-expo-blue: var(--expo-blue);
+  --color-expo-navy: var(--expo-navy);
+  --color-expo-lilac: var(--expo-lilac);
+  --color-expo-pink: var(--expo-pink);
+  --color-expo-yellow: var(--expo-yellow);
+  --color-expo-green: var(--expo-green);
+  --color-expo-mint: var(--expo-mint);
+  --color-expo-sky: var(--expo-sky);
+  --color-expo-purple: var(--expo-purple);
+  --color-expo-coral: var(--expo-coral);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--expo-bg);
+  color-scheme: light;
+  scroll-behavior: smooth;
+}
+
 body {
+  min-width: 320px;
+  margin: 0;
+  overflow-x: clip;
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 3px solid var(--expo-blue);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--expo-yellow);
+  color: var(--expo-navy);
+}
+
+.pixel-label {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.pixel-panel {
+  border: 2px solid color-mix(in srgb, var(--expo-navy) 75%, transparent);
+  border-radius: 16px;
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--expo-navy) 22%, transparent);
+}
+
+.pixel-card {
+  border: 2px solid var(--expo-line);
+  border-radius: 14px;
+  background: var(--expo-card);
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--expo-navy) 10%, transparent);
+}
+
+.app-stage {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  overflow: hidden;
+  background-color: var(--expo-navy);
+  background-image:
+    linear-gradient(135deg, rgb(47 45 76 / 86%), rgb(22 119 184 / 72%)),
+    url("/assets/brand/phone-backdrop.svg");
+  background-position: center;
+  background-size: cover, 720px 720px;
+  padding: 24px;
+}
+
+.app-device {
+  position: relative;
+  display: flex;
+  width: min(390px, 100%);
+  height: min(844px, calc(100dvh - 48px));
+  min-height: 620px;
+  overflow: hidden;
+  border: 8px solid #fff;
+  border-radius: 36px;
+  background: var(--expo-bg);
+  box-shadow:
+    0 30px 90px rgb(10 14 40 / 42%),
+    8px 8px 0 rgb(19 20 48 / 55%);
+  isolation: isolate;
+}
+
+.app-device-speaker {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  z-index: 30;
+  width: 44px;
+  height: 5px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 65%);
+  pointer-events: none;
+}
+
+.app-topbar {
+  position: relative;
+  z-index: 20;
+  display: grid;
+  min-height: 64px;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(64px, auto) minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: 8px;
+  padding:
+    max(10px, env(safe-area-inset-top))
+    12px
+    8px;
+  background: linear-gradient(90deg, var(--expo-blue), var(--expo-lilac));
+  box-shadow: 0 3px 0 rgb(47 45 76 / 20%);
+}
+
+.app-topbar-action {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  justify-self: start;
+  border: 2px solid rgb(255 255 255 / 55%);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-decoration: none;
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease;
+}
+
+.app-topbar-action:hover {
+  background: rgb(255 255 255 / 16%);
+  transform: translateY(-1px);
+}
+
+.app-topbar-action:active {
+  transform: translateY(1px);
+}
+
+.app-screen-stack {
+  position: relative;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--expo-sky) transparent;
+  scrollbar-width: thin;
+}
+
+.app-screen-stack:focus-visible {
+  outline-offset: -4px;
+}
+
+.app-screen-stack > section[hidden] {
+  display: none;
+}
+
+.app-bottom-nav {
+  position: relative;
+  z-index: 20;
+  flex: 0 0 auto;
+  border-top: 2px solid var(--expo-line);
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 -5px 18px rgb(47 45 76 / 8%);
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
+}
+
+.app-nav-item {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 58px;
+  cursor: pointer;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #55536e;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    transform 120ms ease;
+}
+
+.app-nav-item:hover {
+  background: #eef7fc;
+  color: var(--expo-blue);
+}
+
+.app-nav-item:active {
+  transform: translateY(2px);
+}
+
+.app-nav-item.is-active {
+  background: #e8f4fb;
+  color: var(--expo-navy);
+}
+
+.app-nav-icon {
+  display: grid;
+  width: 32px;
+  height: 30px;
+  place-items: center;
+}
+
+.app-nav-label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.64rem;
+  font-weight: 800;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-nav-active-dot {
+  position: absolute;
+  bottom: 2px;
+  width: 15px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--expo-blue);
+}
+
+.app-nav-item-featured {
+  overflow: visible;
+  color: var(--expo-blue);
+}
+
+.app-nav-item-featured .app-nav-icon {
+  width: 56px;
+  height: 56px;
+  margin-top: -28px;
+  border: 4px solid #fff;
+  border-radius: 18px;
+  background: var(--expo-blue);
+  color: #fff;
+  box-shadow:
+    0 0 0 2px var(--expo-blue),
+    4px 4px 0 rgb(47 45 76 / 25%);
+  transform: rotate(2deg);
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease;
+}
+
+.app-nav-item-featured:hover,
+.app-nav-item-featured.is-active {
+  background: transparent;
+  color: var(--expo-blue);
+}
+
+.app-nav-item-featured:hover .app-nav-icon,
+.app-nav-item-featured.is-active .app-nav-icon {
+  background: var(--expo-purple);
+  transform: translateY(-2px) rotate(-2deg);
+}
+
+@media (max-width: 639px) {
+  .app-stage {
+    display: block;
+    padding: 0;
+    background: var(--expo-bg);
+  }
+
+  .app-device {
+    width: 100dvw;
+    height: 100dvh;
+    min-height: 0;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .app-device-speaker {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
